@@ -1,0 +1,144 @@
+(* rpi_OPCServer.project
+ * Copyright 2017 Lukas Friedrichsen
+ * License: Apache License Version 2.0
+ *
+ * 2017-06-08
+ *
+ * Description: CODESYS implementation of a basic OPC UA server for the Raspberry
+ * Pi; serves as the communication interface towards higher level networks
+ *)
+
+PROGRAM PLC_PRG
+VAR CONSTANT
+		(* Defines *)
+		MAX_NODE_COUNT:		UINT:=10;
+END_VAR
+VAR
+		(* Process parameters *)
+        running:       		BOOL:=FALSE;
+        state:		 	    UINT:=0;
+		node_count:			UINT:=0;
+
+		(* Functions *)
+		file_op:            FILE.Open;
+        file_rd:            FILE.Read;
+        file_cl:            FILE.Close;
+
+		(* Files *)
+		handle_file:        CAA.HANDLE;
+		name_file1:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node1';
+		name_file2:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node2';
+		name_file3:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node3';
+		name_file4:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node4';
+		name_file5:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node5';
+		name_file6:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node6';
+		name_file7:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node7';
+		name_file8:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node8';
+		name_file9:         CAA.FILENAME:= '/usr/local/var/emra/rpi_Node9';
+		name_file10:        CAA.FILENAME:= '/usr/local/var/emra/rpi_Node10';
+
+		(* Variables *)
+		handle_var_ptr:		POINTER TO STRING:=NULL;
+        opc_node1:	        STRING(64):='';
+		opc_node2:			STRING(64):='';
+		opc_node3:	        STRING(64):='';
+		opc_node4:			STRING(64):='';
+		opc_node5:	        STRING(64):='';
+		opc_node6:			STRING(64):='';
+		opc_node7:	        STRING(64):='';
+		opc_node8:			STRING(64):='';
+		opc_node9:	        STRING(64):='';
+		opc_node10:			STRING(64):='';
+END_VAR
+
+________________________________________________________________________________
+
+(* Main program *)
+IF NOT running THEN
+	(* (Re-)Initialize functions and process parameters *)
+    file_op(xExecute:=FALSE);
+    file_cl(xExecute:=FALSE);
+    file_rd(xExecute:=FALSE);
+	state:=0;
+    running:=TRUE;
+
+	(* Increment node_count until the last file has been reached; begin anew in this case *)
+    node_count:=node_count+1;
+	IF node_count<1 OR node_count>MAX_NODE_COUNT THEN
+		node_count:=1;
+	END_IF
+ELSE
+    CASE state OF
+        0:(* Open file *)
+           	CASE node_count OF
+				(* Choose the file to open as well as the respective variable to write to based on node_count *)
+				1:
+					file_op.sFileName:=name_file1;
+					handle_var_ptr:=ADR(opc_node1);
+				2:
+					file_op.sFileName:=name_file2;
+					handle_var_ptr:=ADR(opc_node2);
+				3:
+					file_op.sFileName:=name_file3;
+					handle_var_ptr:=ADR(opc_node3);
+				4:
+					file_op.sFileName:=name_file4;
+					handle_var_ptr:=ADR(opc_node4);
+				5:
+					file_op.sFileName:=name_file5;
+					handle_var_ptr:=ADR(opc_node5);
+				6:
+					file_op.sFileName:=name_file6;
+					handle_var_ptr:=ADR(opc_node6);
+				7:
+					file_op.sFileName:=name_file7;
+					handle_var_ptr:=ADR(opc_node7);
+				8:
+					file_op.sFileName:=name_file8;
+					handle_var_ptr:=ADR(opc_node8);
+				9:
+					file_op.sFileName:=name_file9;
+					handle_var_ptr:=ADR(opc_node9);
+				10:
+					file_op.sFileName:=name_file10;
+					handle_var_ptr:=ADR(opc_node10);
+			END_CASE
+            file_op.eFileMode:=FILE.MODE.MREAD;
+            file_op.xExclusive:=TRUE;
+            file_op(xExecute:=TRUE);
+            IF file_op.xDone THEN
+                handle_file:=file_op.hFile;
+                state:=1;
+            END_IF
+            IF file_op.xError THEN
+				(* Set the respective variable's value to -1 if the file couldn't be opened *)
+				handle_var_ptr^:='-1';
+				running:=FALSE;
+            END_IF
+
+        1:(* Read file *)
+            file_rd.hFile:=handle_file;
+            file_rd.udiTimeOut:=100000;		(* 100ms Timeout *)
+			file_rd.pBuffer:=handle_var_ptr;
+			file_rd.szBuffer:=SIZEOF(STRING(64));
+            file_rd(xExecute:=TRUE);
+            IF file_rd.xDone THEN
+            	state:=2;
+            END_IF
+            IF file_rd.xError THEN
+                (* Set the respective variable's value to -1 if the file couldn't be read *)
+				handle_var_ptr^:='-1';
+				(* Don't set running to FALSE here since the file has to be closed again!*)
+            END_IF
+
+        2:(* Close file *)
+            file_cl.hFile:=handle_file;
+            file_cl(xExecute:=TRUE);
+            IF file_cl.xDone THEN
+                state:=3;
+            END_IF
+
+        3:(* Re-initialize the process variables and functions and increment node_count *)
+			running:=FALSE;
+    END_CASE
+END_IF

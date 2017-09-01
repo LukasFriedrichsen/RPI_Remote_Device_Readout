@@ -1,0 +1,447 @@
+  1.   Download the latest version of Raspbian (though this is not mandatory, I
+       it is recommended to use the light-version, since this minimalistic set-up
+       is free of all the (for this task) superfluous features that come along
+       with the full version (I'm looking at you, MinecraftPI!))
+
+  2.   Flash the SD card using a tool like ImageWriter (if you are using Windows)
+       or dd (if you are using Linux or Mac OS; might look like this:
+
+          sudo dd bs=4M if=/home/lukas/Downloads/2017-04-10-raspbian-jessie-lite.img of=/dev/mmcblk0
+
+       )
+
+  3.   Enable SSH by crating an empty file called ssh on the boot partition of
+       the SD card. Make sure, that the default SSH-port (port 22) isn't blocked
+       by your firewall!
+
+  4.   Eject the SD card and plug it into the RPI, start it up and, if necessary,
+       connect to it via SSH. The default login data is:
+
+          username: pi
+          password: raspberry
+
+       Attention: The default keyboard-layout is set to gb, so y and z are switched.
+
+       THE ABSOLUTELY FIRST THING YOU WANT TO DO IS TO CHANGE THIS DEFAULT
+       USERNAME/PASSWORD COMBINATION! The easiest way to do this is via
+
+          raspi-config
+
+       (the RPI configuration tool). While you are at it, you might consider
+       switching the locales (like timezone and espacially keyboard-layout) as
+       well. Also, expand the filesystem (under the point "Advanced Options") if
+       you haven't done it already while setting up the SD card.
+
+       UPDATE YOUR SYSTEM AFTERWARDS BY EXECUTING
+
+          sudo apt-get update
+          sudo apt-get upgrade
+
+       You will have to run this multiple times to get all updates and upgrades!
+       (This needs internet-connection, so if you don't have the possiblity to
+       connect the RPI via ethernet, you might consider postponing this step until
+       after you have set up a WiFi-connection (cf. step 5).)
+
+       The last thing we'll have to do before setting up the network interfaces
+       is to affix the necessity of a password to the usage of sudo. Eventually,
+       it's neither nice nor wished for, if anybody can mess with the RPI if
+       an authorised person accidently forgets to log out or close the SSH
+       connection. This is done by changing /etc/sudoers.d/010_pi-nopasswd so
+       that it looks like this
+
+          pi ALL=(ALL) ALL: PASSWD
+
+       You should also consider to rename the file to 010_pi-passwd for
+       clarification.
+
+       Annotation: You might encounter the problem, that the RPI keeps closing
+       the SSH connection if you are using an headless setup. You can fix this by
+       executing
+
+          sudo rm /etc/ssh/ssh_host_*
+          sudo dpkg-reconfigure openssh-server
+
+  5.   Set up the RPI's network-configuration:
+
+    5.1. Node:
+
+         Edit /etc/wpa_supplicant/wpa_supplicant.conf and add the following lines
+         at the end:
+
+            network={
+              ssid="your_network_SSID"
+              psk="your_WiFi_password"
+            }
+
+         Furthermore, add
+
+            auto wlan0
+
+         to the wlan0-part in /etc/network/interfaces. This will start the
+         interface on boot. If you want to have a static IP-address rather than
+         receiving one via DHCP, replace the line
+
+            iface wlan0 inet manual
+
+         by
+
+            iface wlan0 inet static
+
+         and add the follwing block directly afterwards:
+
+            address   192.168.42.42   # Your address
+            netmask   255.255.255.0   # Netmask to use
+            gateway   192.168.42.1    # Usually your router
+            network   192.168.42.0    # Your network's address range (optional)
+            broadcast 192.168.42.255  # Broadcast address (optional)
+
+         Finally, to enable auto-reconnect on a connection loss,
+         execute the following command:
+
+            sudo cp -s /etc/wpa_suppliciant/ifupdown.sh /etc/ifplugd/action.d/ifupdown
+
+    5.2. Server:
+         Concerning the server, you've got three possibilities: WiFi (as a client),
+         WiFi (as an access-point) and ethernet. In the end, it's up to you, which
+         solution you prefer, but since setting up a simple WiFi/ethernet connection
+         is pretty easy (see step 5.1), we will have a look at the third option
+         here. And to make it a bit more tricky, we want the server to be accessible
+         by the nodes over the WiFi-interface as an access-point, whilst at the
+         same time to connect to the corporate-network via the ethernet-interface.
+         But let's start with the WiFi-part:
+
+      5.2.1. WiFi-interface:
+             1. Install hostapd and dnsmasq
+
+                  sudo apt-get install hostapd dnsmasq
+
+             2. Configure /etc/network/interfaces so that the wlan0-part looks
+                like in the version in ./files
+
+             3. Add the following line to /etc/default/hostapd:
+
+                  DAEMON_CONF="/etc/hostapd/hostapd.conf"
+
+             4. Configure /etc/hostapd/hostapd.conf so that it looks like the version
+                in ./files.
+
+             5. Uncomment the following line in /etc/sysctl.conf
+
+                  net.ipv4.ip_forward=1
+
+             6. Configure /etc/dnsmasq.conf so that it looks like the version in
+                ./files.
+
+      5.2.2. Ethernet-interface:
+             Now this part is easy again. The only thing that needs to be done is
+             to edit /etc/network/interfaces so that the eth0-part looks like in
+             the version in ./files.
+
+       An that's it. Now the RPI should function as an access-point whilst still
+       being able to connect to another network via ethernet.
+
+  6.   What we are still lacking though is a firewall to constrain the network
+       traffic. This is a very important security measure to restrict possible
+       unauthorized instances from messing with the server or the nodes. In
+       Raspbian, as well as in Linux in general, firewall rules are managed by
+       the program iptables by default. Now, to set the nodes and server up, so
+       that only the needed ports (server: SSH, MQTT and OPC; nodes: SSH, MQTT)
+       are accessible, execute the script iptables_setup_XXX.sh (cf. ./scripts).
+
+       Attention: This also blocks system updates! If you need to update Raspbian,
+       use the resp. script (system_update_XXX.sh) from ./scripts. Please notice,
+       that this will restart the RPI after the update for all changes to take
+       full effect, so any connection via SSH will be lost.
+
+  7.   Set up the MQTT-broker/-client:
+
+    7.1. Broker:
+         1. At first, install Mosquitto by executing
+
+              sudo apt-get install mosquitto
+
+            You might have to shut down the access-point first to be able to connect
+            to the internet. You can do this via
+
+              sudo ifdown wlan0
+
+         2. Configure /etc/mosquitto/mosquitto.conf so that it looks like the
+            version in ./files.
+
+            Since Mosquitto is being executed as mosquitto, it is necessary to
+            change the possession of /var/lib/mosquitto to this user as well to
+            enable the writing of the in-memory database (through the persistence-
+            option in the configuration file) via
+
+              sudo chown mosquitto /var/lib/mosquitto
+
+         3. Add users, that are allowed to connect to the broker by executing
+
+              mosquitto_passwd (-c) /etc/mosquitto/usr_auth username
+
+            Only use the -c flag if the file doesn't exist yet.
+
+         4. Now we come to point of continuously growing significance and
+            importance nowadays: security. Since we don't want any unauthorised
+            instances to read along, or worse, to manipulate the MQTT-network-
+            traffic, we have to encrypt the communication. Therefor, the usage of
+            SSL/TLS is recommended because it is safe and directly supported by
+            Mosquitto. To generate the needed certificates and keys, execute
+            cert_gen.sh (cf. ./scripts).
+
+            Annotation: We're going to use a self signed CA-certificate. Whilst
+            this is not recommended in the world wide web, it is sufficient to
+            provide encrypted communication inside a closed network.
+
+         Optional: You can test the broker now from any device connected to the
+         RPI's access-point with mosquitto-clients installed. Just copy the
+         broker's CA-certificate to it and execute mosquitto_test.sh (cf. ./scripts)
+         afterwards. Since the broker is running in daemon mode by default,
+         the defined log file is only updated on a HUB-signal, meaning, if the
+         daemon is stopped (e.g. by shutting the RPI down or switching the init
+         mode to 1 or 6). Even though, an update can more or less be forced by
+         without having to stop the broker by executing
+
+            sudo service mosquitto reload
+
+    7.2. Client:
+
+      7.2.1. Server:
+             We're going to use the Python-version of the paho-mqtt client since
+             we want to generate and manipulate CSV-files - and Python is the
+             easiest way to do this.
+             1. Start by installing the Python package installer pip via
+
+                  sudo apt-get install python3-pip
+
+             2. Now get the Python-version of the paho-mqtt client by executing
+
+                  sudo pip3 install paho-mqtt
+
+             3. Create a file /usr/local/sbin/mqtt_server_client.py, that looks
+                like the version in ./files and make it executable via
+
+                  sudo chmod 744 /usr/local/sbin/mqtt_server_client.py
+
+                After that, execute mqtt_server_client_setup.sh (cf. ./scripts)
+                to handle administrative stuff like creating the (default)
+                directories and files needed by the MQTT client.
+
+                Attention: There are some problems concerning the TLS handshake
+                with ca-certificates, that don't contain any DNS-names but only
+                IP-addresses in Python versions older than 3.5. Replace
+                /usr/lib/python3.X/ssl.py by the version in ./files in this case.
+                To learn your Python version, type
+
+                  python3
+
+                The version number will be printed in the first line.
+
+             4. Edit /usr/local/etc/mqtt_server_client/user_credentials and replace
+                the tags username and password by the actual user credentials used
+                by the MQTT client to log in to the broker.
+
+             5. Now we don't want the log file as well as the database generated
+                by the MQTT client to contain all the data ever recorded but only
+                the entries of a more relevant timespan, let's say of the last
+                month. Therefor, Raspbian provides a tool called cron, that lets
+                the user define points in time, when a specific task shall be
+                performed. Now, to implement an automated file cleanup, begin with
+                creating the script to be executed automatically. In our case,
+                this is /usr/local/sbin/mqtt_server_client_cleanup.sh (cf. ./scripts).
+                Make it executable via
+
+                  sudo chmod 744 /usr/local/sbin/mqtt_server_client_cleanup.sh
+
+                and change the ownership to root through
+
+                  sudo chown root /usr/local/sbin/mqtt_server_client_cleanup.sh
+
+                Open /etc/crontab afterwards and add following line right before
+                the last #:
+
+                  0 0 1 * * root /usr/local/sbin/mqtt_server_client_cleanup.sh
+
+                And that's it. Now cron will execute the cleanup script at
+                midnight on the first day of every month as root.
+
+             6. The last thing left to do is to think of a way to make our python
+                script automatically start on every boot up. Therefor we will use
+                Raspbians systemv initialization process (resp. systemd to be more
+                precise). Start by creating a file /etc/init.d/mqtt_server_client,
+                that looks like its equivalent in ./files. Make it executable via
+
+                  sudo chmod 755 /etc/init.d/mqtt_server_client
+
+                After that, execute
+
+                  sudo update-rc.d mqtt_server_client defaults
+
+                Now the local MQTT client will automatically start on every boot
+                up. Furthermore, it can be manually started and stopped via
+
+                  sudo service mqtt_server_client start/stop/restart
+
+                and the daemon's current status can be viewed via
+
+                  service mqtt_server_client status
+
+      7.2.2. Node:
+
+             1. Again, begin by installing pip as well as the Python version of
+                paho-mqtt (cf. 7.2.1. step 1. and 2.). But this time, we do
+                furthermore need libraries that provide the functionalities to
+                communicate with peripheral devices via MODBUS RTU and M-BUS.
+                Therefor, we choose pymodbus and python-mbus. The first one is
+                available via pip as well. For python-mbus, get the source code
+                from
+
+                  https://github.com/rscada/python-mbus
+
+                and install it on the RPI by executing
+
+                  sudo python3 setup.py install
+
+             2. Since python-mbus is merely a Python wrapper for libmbus (which
+                is written in C), it needs the original source code in form of a
+                static or shared library as a dependency. Therefor, clone
+                libmbus from Github via
+
+                  git clone https://github.com/rscada/libmbus
+
+                Execute libmbus_shared_lib.sh (cf. ./scripts) afterwards to
+                generate the needed shared library and automatically copy it to
+                /usr/local/lib.
+
+             3. To be able to connect to the MQTT broker running on the server,
+                the node will need the CA-certificate generated in step 7.1.4..
+                Copy it to /usr/local/share/ca-certificates/ca_cert.pem.
+
+             4. The following set up procedure is equivalent to steps 7.2.1.3 to
+                7.2.1.5.. Just replace *mqtt_server_client* by *mqtt_node_client*.
+
+             5. Now here comes the big difference towards the MQTT client we set
+                up on the server. This time, we don't actually want the program
+                to start directly on boot up, but rather only if a new device
+                is connected to the RPI. Therefor, we need to create a file
+                /etc/init.d/mqtt_node_client, that looks like its equivalent in
+                ./files. Make it executable via
+
+                  sudo chmod 755 /etc/init.d/mqtt_node_client
+
+                After that, execute
+
+                  sudo update-rc.d mqtt_node_client defaults
+
+                Unitl now, we have created a service, that is never automatically
+                started, but only terminated on shut down. Now, to start the
+                program when a new device is connected to the RPI, we will use
+                Raspbian's udev functionality. Create another file
+                /etc/udev/rules.d/89-mqtt_node_client.rules with the following
+                content:
+
+                  KERNEL=="ttyUSB?", SUBSYSTEM=="tty", ACTION=="add", RUN+="/bin/bash service mqtt_node_client restart"
+                  KERNEL=="ttyUSB?", SUBSYSTEM=="tty", ACTION=="remove", RUN+="/bin/bash service mqtt_node_client stop"
+
+                Reload the udev service by executing
+
+                  sudo service udev restart
+
+                Now mqtt_node_client.py will be started anew everytime a new
+                serial device connects to an USB port.
+
+             Annotation: The configuration of the Modbus RTU/MBus devices
+             connected to the node (meaning the serial port, bus addresses,
+             registers, etc.) takes place in /usr/local/sbin/mqtt_node_client.py.
+             Refer to the documentation of the specific devices concerning the
+             protocol specific properties like storage addresses.
+
+  8. Set up the OPC UA server:
+
+    8.1. Installation:
+         Start by downloading CODESYS v3 from https://store.codesys.com on a
+         Windows computer and install it.  Afterwards, get CODESYS Control for
+         Raspberry Pi SL from the store as well (make sure to choose V3.5.11.0
+         or newer), start CODESYS v3 and select Tools->Package Manager from the
+         toolbar. There, you can add the RPI package via Installieren. After you
+         restarted the program, a new menu item, Tools->RaspberryPi aktualisieren,
+         becomes available. Select it, wait for CODESYS to upgrade your device
+         and restart the Pi afterwards.
+
+         Annotation: The firewall and the sudo-password have to be disabled for
+         CODESYS to be able to connect to the RPI. Don't forget to re-enable both
+         afterwards!
+
+    8.2. License:
+
+         1. Acquire a license for CODESYS Control for Raspberry Pi SL from the
+            CODESYS store.
+
+         2. Create a new project via Datei->Neues Projekt->Projekt mit
+            Geräteapplikation. Choose the RPI as the target device.
+
+         3. Select Device in the device tree, open tab SPS-Einstellungen and
+            click Lizenz bearbeiten.
+
+         4. Choose Lizenz aktivieren or Lizenz installieren, depending on the
+            format you got the license in. If you select Lizenz aktivieren, make
+            sure that the RPI has internet connection. Wait for the process to
+            finish and reboot the device afterwards.
+
+         5. Now to create a backup of the license, open the project created in
+            step 2 again and select Device, but this time go to Dateien. Copy the
+            content of the directory Backup (3SLicenseInfo.tar) from the RPI to
+            your computer or an external storage medium. This is your backup in
+            case the license on the device gets corrupted or lost.
+
+         (6. If you need to re-activate your license, you can do so by copying
+             the backup file (3SLicenseInfo.tar) to the directory Restore on the
+             device.)
+
+    8.3. Programming:
+         Now that CODESYS is installed on our computer as well as on the RPI and
+         the license is activated, it is time to create the OPC UA server
+         application. This is done as follows:
+
+         1. Open the project created in step 8.2 and select Bibliotheksverwalter
+            in the device tree and add the following libraries (found under
+            Erweitert):
+
+              CAA File
+              CAA Types Extern
+
+         2. Configure PLC_PRG so that it looks like its equivalent in ./opc_server.
+
+         3. Compile the project via Erstellen->Übersetzen.
+
+         4. Select Applikation in the device tree and create a new symbol
+            configuration via Projekt->Objekt hinzufügen->Symbolkonfiguration.
+            Activate all OPC-relating settings.
+
+         5. Now check the variables to be made accessible through the OPC UA server
+            from PLC_PRG and configure the access privileges (read, write or
+            read and write).
+
+         6. Select Device in the device tree and click Netzwerk durchsuchen.
+            Choose the RPI and connect to it via Online->Einloggen. Flash the
+            program to the device by executing Online->Quellcode auf verbundene
+            Steuerung laden and Online->Bootapplikation erzeugen. Start the
+            program through Debug->Start or by pressing F5.
+
+         7. Now the last thing we have to do is to tell CODESYS on the RPI, that
+            it has to use eth0 as the OPC UA network interface and not wlan0. To
+            do this, add the following lines to the end of
+            /etc/CODESYSControl_User.cfg (on the Pi):
+
+              [CmpOPCUAServer]
+              NetworkAdapter=eth0
+              NetworkPort=4840
+
+         That's it concerning the server. You can now test it with a client like
+         Free OPC UA or UaExpert. Connect to it over port 4840 and you should be
+         able to see the variables configured in step 6. If you connect to the
+         MQTT broker and publish a message to one of the defined topics, the
+         content will be visible via the OPC UA server.
+
+Optional: To enable VNC (virtual network computing), follow the instructions from
+          raspberrypi.org/documentation/remote-access/vnc/README.md.

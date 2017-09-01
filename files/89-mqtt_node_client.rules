@@ -1,0 +1,2 @@
+KERNEL=="ttyUSB?", SUBSYSTEM=="tty", ACTION=="add", RUN+="/bin/bash service mqtt_node_client restart"
+KERNEL=="ttyUSB?", SUBSYSTEM=="tty", ACTION=="remove", RUN+="/bin/bash service mqtt_node_client stop"

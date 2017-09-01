@@ -1,0 +1,77 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides:             mqtt_server_client
+# Required-Start:       $remote_fs $syslog $network mosquitto
+# Required-Stop:        $remote_fs $syslog $network mosquitto
+# Default-Start:        2 3 4 5
+# Default-Stop:         0 1 6
+# Short-Description:    MQTT v3.1 client
+# Description:
+#  This implementation of the Python paho-mqtt client allows to connect to a
+#  local MQTT broker and log the data published on definable topics. Furthermore,
+#  it provides the functionality to act as an interface towards other, non-MQTT
+#  based applications like e.g. an OPC UA server by generating data-exchange-files
+#  in the CSV format, containing the most current values published on the
+#  subscribed topics at all times.
+### END INIT INFO
+
+# When this option is on, when any command fails, the shell immediately exits
+set -e
+
+PIDFILE=/var/run/mqtt_server_client.pid
+DAEMON=/usr/local/sbin/mqtt_server_client.py
+
+# Does the file exist and is the permission to execute it granted
+test -x ${DAEMON} || exit 0
+
+# Set all files to be created from here on to -rw-r--r--
+umask 022
+
+# Load init functions
+. /lib/lsb/init-functions
+
+# Start the daemon
+start() {
+  log_daemon_msg "Starting daemon:" "mqtt_server_client"
+  if start-stop-daemon --start --quiet --oknodo --background --make-pidfile --pidfile ${PIDFILE} --startas /bin/bash -- -c "${DAEMON}"; then
+      log_end_msg 0
+  else
+      log_end_msg 1
+  fi
+}
+
+# Stop the daemon
+stop() {
+  log_daemon_msg "Stopping daemon:" "mqtt_server_client"
+  if start-stop-daemon --stop --quiet --oknodo --pidfile ${PIDFILE}; then
+      log_end_msg 0
+      rm -f ${PIDFILE}
+  else
+      log_end_msg 1
+  fi
+}
+
+case "$1" in
+  start)
+        start
+        ;;
+  stop)
+        stop
+        ;;
+
+  restart)
+        stop
+        start
+        ;;
+
+  status)
+        status_of_proc -p ${PIDFILE} ${DAEMON} mqtt_server_client && exit 0 || exit $?
+        ;;
+
+  *)
+        log_action_msg "Usage: /etc/init.d/mqtt_server_client {start|stop|restart|status}"
+        exit 1
+esac
+
+exit 0
